@@ -49,7 +49,7 @@ function getServiceName (tracer, config, sessionDetails) {
     return config.service
   }
 
-  return `${tracer._service}-http-client`
+  return tracer._service
 }
 
 function hasAmazonSignature (headers, path) {

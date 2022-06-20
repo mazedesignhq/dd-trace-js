@@ -38,13 +38,13 @@ function createWrapEmit (tracer, config) {
       if (event === 'stream') {
         const stream = arg1
         const headers = arg2
-        return instrumentStream(tracer, config, stream, headers, 'http.request', () => {
+        return instrumentStream(tracer, config, stream, headers, 'web.request', () => {
           return emit.apply(this, arguments)
         })
       } else if (event === 'request') {
         const req = arg1
         const res = arg2
-        return web.instrument(tracer, config, req, res, 'http.request', () => {
+        return web.instrument(tracer, config, req, res, 'web.request', () => {
           return emit.apply(this, arguments)
         })
       } else {
