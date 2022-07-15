@@ -827,6 +827,7 @@ interface Plugins {
   "mongoose": plugins.mongoose;
   "mysql": plugins.mysql;
   "mysql2": plugins.mysql2;
+  "neo4j": plugins.neo4j;
   "net": plugins.net;
   "next": plugins.next;
   "opensearch": plugins.opensearch;
@@ -1483,6 +1484,11 @@ declare namespace plugins {
    * [mysql2](https://github.com/sidorares/node-mysql2) module.
    */
   interface mysql2 extends mysql {}
+  /**
+   * This plugin automatically instruments the
+   * [neo4j](https://github.com/neo4j/neo4j-javascript-driver) module.
+   */
+  interface neo4j extends Instrumentation {}
 
   /**
    * This plugin automatically instruments the
