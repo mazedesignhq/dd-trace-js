@@ -54,6 +54,7 @@ module.exports = {
   get 'mysql' () { return require('../../../datadog-plugin-mysql/src') },
   get 'mysql2' () { return require('../../../datadog-plugin-mysql2/src') },
   get 'net' () { return require('../../../datadog-plugin-net/src') },
+  get 'neo4j' () {return  require('../../../datadog-plugin-neo4j/src') },
   get 'next' () { return require('../../../datadog-plugin-next/src') },
   get 'oracledb' () { return require('../../../datadog-plugin-oracledb/src') },
   get 'paperplane' () { return require('../../../datadog-plugin-paperplane/src') },
