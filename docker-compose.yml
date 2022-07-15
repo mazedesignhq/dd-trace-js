@@ -82,6 +82,13 @@ services:
     image: ghcr.io/ridedott/pubsub-emulator
     ports:
       - "127.0.0.1:8081:8081"
+  neo4j:
+    image: neo4j:4.2.3
+    environment:
+      - NEO4J_AUTH=neo4j/test
+    ports:
+      - "7474:7474"
+      - "11011:7687"
   localstack:
     # TODO: Figure out why SNS doesn't work in >=1.2
     # https://github.com/localstack/localstack/issues/7479
