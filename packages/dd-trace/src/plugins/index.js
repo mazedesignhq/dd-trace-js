@@ -33,6 +33,7 @@ module.exports = {
   'mongodb-core': require('../../../datadog-plugin-mongodb-core/src'),
   'mysql': require('../../../datadog-plugin-mysql/src'),
   'mysql2': require('../../../datadog-plugin-mysql2/src'),
+  'neo4j': require('../../../datadog-plugin-neo4j/src'),
   'net': require('../../../datadog-plugin-net/src'),
   'next': require('../../../datadog-plugin-next/src'),
   'oracledb': require('../../../datadog-plugin-oracledb/src'),

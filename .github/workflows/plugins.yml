@@ -648,6 +648,29 @@ jobs:
       - run: yarn test:plugins:ci
       - uses: codecov/codecov-action@v2
 
+  neo4j:
+    runs-on: ubuntu-latest
+    services:
+      neo4j:
+        image: neo4j:4.2.3
+        env:
+          NEO4J_AUTH: 'neo4j/test'
+        ports:
+          - 7474:7474
+          - 11011:7687
+    env:
+      PLUGINS: neo4j
+      SERVICES: neo4j
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/node/setup
+      - run: yarn install
+      - uses: ./.github/actions/node/oldest
+      - run: yarn test:plugins:ci
+      - uses: ./.github/actions/node/latest
+      - run: yarn test:plugins:ci
+      - uses: codecov/codecov-action@v2
+
   net:
     runs-on: ubuntu-latest
     env:

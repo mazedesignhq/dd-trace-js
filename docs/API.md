@@ -74,6 +74,9 @@ tracer.use('pg', {
 <h5 id="mysql2"></h5>
 <h5 id="mysql2-tags"></h5>
 <h5 id="mysql2-config"></h5>
+<h5 id="neo4j"></h5>
+<h5 id="neo4j-tags"></h5>
+<h5 id="neo4j-config"></h5>
 <h5 id="net"></h5>
 <h5 id="next"></h5>
 <h5 id="oracledb"></h5>
@@ -127,6 +130,7 @@ tracer.use('pg', {
 * [mongodb-core](./interfaces/plugins.mongodb_core.html)
 * [mysql](./interfaces/plugins.mysql.html)
 * [mysql2](./interfaces/plugins.mysql2.html)
+* [neo4j](./interfaces/plugins.neo4j.html)
 * [net](./interfaces/plugins.net.html)
 * [next](./interfaces/plugins.next.html)
 * [oracledb](./interfaces/plugins.oracledb.html)
