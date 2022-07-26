@@ -51,29 +51,28 @@ describe('Plugin', () => {
             await session.close()
           })
 
-          it('should set the correct tags', done => {
+          it('should set the correct tags', async () => {
             const statement = 'CREATE (n:Person { name: $name }) RETURN n.name'
 
-            agent
+            const expectedTagsPromise = agent
               .use(traces => {
                 const span = traces[0][0]
 
                 expect(span).to.have.property('name', 'neo4j.query')
                 expect(span).to.have.property('service', 'test-neo4j')
-                expect(span).to.have.property('resource', 'neo4j.query')
+                expect(span).to.have.property('resource', statement)
                 expect(span).to.have.property('type', 'cypher')
                 expect(span.meta).to.have.property('span.kind', 'client')
+                expect(span.meta).to.have.property('db.name', 'neo4j')
                 expect(span.meta).to.have.property('db.type', 'neo4j')
                 expect(span.meta).to.have.property('db.user', 'neo4j')
                 expect(span.meta).to.have.property('out.host', 'localhost')
-                expect(span.meta).to.have.property('neo4j.operation', 'CREATE')
-                expect(span.meta).to.have.property('neo4j.statement', statement)
                 expect(span.metrics).to.have.property('out.port', 11011)
               })
-              .then(done)
-              .catch(done)
 
-            session.run(statement, { name: 'Alice' })
+            await session.run(statement, { name: 'Alice' })
+
+            await expectedTagsPromise
           })
 
           it('should propagate context', async () => {

@@ -28,7 +28,7 @@ addHook({ name: 'neo4j-driver', file: 'lib/session.js', versions: ['<4.3.0', '>=
   shimmer.wrap(Session.prototype, 'run', wrapRun)
   return Session
 })
-exports
+
 addHook({ name: 'neo4j-driver', file: 'lib/transaction.js', versions: ['<4.3.0', '>=4.0.0'] }, exports => {
   const Transaction = exports.default
   shimmer.wrap(Transaction.prototype, 'run', wrapRun)
@@ -36,18 +36,18 @@ addHook({ name: 'neo4j-driver', file: 'lib/transaction.js', versions: ['<4.3.0',
 })
 
 function wrapRun (run) {
-  return function (query) {
+  return function (statement) {
     if (!startCh.hasSubscribers) {
       return run.apply(this, arguments)
     }
 
-    if (!query) return run.apply(this, arguments)
+    if (!statement) return run.apply(this, arguments)
 
     const asyncResource = new AsyncResource('bound-anonymous-fn')
     const attributes = getAttributesFromNeo4jSession(this)
 
     return asyncResource.runInAsyncScope(() => {
-      startCh.publish({ attributes, query })
+      startCh.publish({ attributes, statement })
 
       try {
         const promise = run.apply(this, arguments)
@@ -88,13 +88,16 @@ function getAttributesFromNeo4jSession (session) {
   const address = connectionProvider._address || connectionProvider._seedRouter
   const auth = connectionProvider._authToken || {}
 
-  const attributes = {}
+  const attributes = {
+    // "neo4j" is the default database name. When used, "session._database" is an empty string
+    dbName: session._database ? session._database : 'neo4j'
+  }
   if (address) {
     attributes.host = address._host
     attributes.port = address._port
   }
   if (auth.principal) {
-    attributes.user = auth.principal
+    attributes.dbUser = auth.principal
   }
   return attributes
 }
