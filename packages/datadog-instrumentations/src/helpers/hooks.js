@@ -71,6 +71,7 @@ module.exports = {
   'mongoose': () => require('../mongoose'),
   'mysql': () => require('../mysql'),
   'mysql2': () => require('../mysql2'),
+  'neo4j': () => require('../neo4j'),
   'net': () => require('../net'),
   'next': () => require('../next'),
   'oracledb': () => require('../oracledb'),
