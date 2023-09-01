@@ -1,10 +1,12 @@
 'use strict'
 
-const Plugin = require('../../dd-trace/src/plugins/plugin')
+const StoragePlugin = require('../../dd-trace/src/plugins/storage')
 const { storage } = require('../../datadog-core')
 const analyticsSampler = require('../../dd-trace/src/analytics_sampler')
 
-class Neo4jPlugin extends Plugin {
+class Neo4jPlugin extends StoragePlugin {
+  static get id () { return 'neo4j' }
+  static get system () { return 'neo4j' }
   static get name () {
     return 'neo4j'
   }
