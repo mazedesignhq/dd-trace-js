@@ -1,208 +1,212 @@
 'use strict'
 
 const agent = require('../../dd-trace/test/plugins/agent')
+const { ERROR_MESSAGE, ERROR_STACK, ERROR_TYPE } = require('../../dd-trace/src/constants')
 
 describe('Plugin', () => {
-  let neo4j
-  let tracer
-
-  withVersions('neo4j', ['neo4j-driver'], (version, moduleName) => {
+  withVersions('neo4j', ['neo4j-driver', 'neo4j-driver-core'], (version, moduleName) => {
     const metaModule = require(`../../../versions/${moduleName}@${version}`)
 
     describe('neo4j', () => {
+      let driver
+      let neo4j
+      let tracer
+
       beforeEach(async () => {
         tracer = await require('../../dd-trace')
+
+        await agent.load('neo4j')
+
+        if (moduleName === 'neo4j-driver-core') {
+          neo4j = proxyquire(`../../../versions/neo4j-driver@${version}`, {
+            'neo4j-driver-core': metaModule.get()
+          }).get()
+        } else {
+          neo4j = metaModule.get()
+        }
+
+        driver = neo4j.driver('bolt://localhost:7687', neo4j.auth.basic('neo4j', 'test-password'), {
+          disableLosslessIntegers: true
+        })
+
+        await driver.verifyConnectivity()
       })
 
-      describe('driver', () => {
-        let driver
+      afterEach(async () => {
+        await driver.close()
+        await agent.close({ ritmReset: false })
+      })
 
-        before(() => {
-          return agent.load('neo4j')
-        })
+      describe('session', () => {
+        let session
 
-        after(() => {
-          return agent.close({ ritmReset: false })
-        })
-
-        beforeEach(async () => {
-          neo4j = metaModule.get()
-
-          driver = neo4j.driver('bolt://localhost:11011', neo4j.auth.basic('neo4j', 'test'), {
-            disableLosslessIntegers: true
-          })
-
-          await driver.verifyConnectivity()
-          await driver.session().run('MATCH (n) DETACH DELETE n')
+        beforeEach(() => {
+          session = driver.session()
         })
 
         afterEach(async () => {
-          await driver.close()
+          await session.close()
         })
 
-        describe('session', () => {
-          let session
+        it('should set the correct tags', async () => {
+          const statement = 'CREATE (n:Person { name: $name }) RETURN n.name'
 
-          beforeEach(() => {
-            session = driver.session()
-          })
+          const expectedTagsPromise = agent
+            .use(traces => {
+              const span = traces[0][0]
 
-          afterEach(async () => {
-            await session.close()
-          })
-
-          it('should set the correct tags', async () => {
-            const statement = 'CREATE (n:Person { name: $name }) RETURN n.name'
-
-            const expectedTagsPromise = agent
-              .use(traces => {
-                const span = traces[0][0]
-
-                expect(span).to.have.property('name', 'neo4j.query')
-                expect(span).to.have.property('service', 'test-neo4j')
-                expect(span).to.have.property('resource', statement)
-                expect(span).to.have.property('type', 'cypher')
-                expect(span.meta).to.have.property('span.kind', 'client')
-                expect(span.meta).to.have.property('db.name', 'neo4j')
-                expect(span.meta).to.have.property('db.type', 'neo4j')
-                expect(span.meta).to.have.property('db.user', 'neo4j')
-                expect(span.meta).to.have.property('out.host', 'localhost')
-                expect(span.metrics).to.have.property('out.port', 11011)
+              expect(span).to.include({
+                name: 'neo4j.query',
+                service: 'test-neo4j',
+                resource: statement,
+                type: 'cypher'
               })
-
-            await session.run(statement, { name: 'Alice' })
-
-            await expectedTagsPromise
-          })
-
-          it('should propagate context', async () => {
-            const expectedSpanPromise = agent
-              .use(traces => {
-                const span = traces[0][0]
-
-                expect(span).to.include({
-                  name: 'test-context',
-                  service: 'test'
-                })
-
-                expect(span.parent_id).to.not.be.null
+              expect(span.meta).to.include({
+                'span.kind': 'client',
+                'db.name': 'neo4j',
+                'db.type': 'neo4j',
+                'db.user': 'neo4j',
+                'out.host': 'localhost'
               })
-
-            const span = tracer.startSpan('test-context')
-
-            await tracer.scope().activate(span, async () => {
-              await session.run('MATCH (n) return n LIMIT 1')
-              await span.finish()
+              expect(span.metrics).to.have.property('out.port', 7687)
             })
-            await expectedSpanPromise
-          })
 
-          it('should handle errors', async () => {
-            let error
+          await session.run(statement, { name: 'Alice' })
 
-            const expectedSpanPromise = agent
-              .use(traces => {
-                const span = traces[0][0]
-
-                expect(span.meta).to.have.property('error.type', error.name)
-                expect(span.meta).to.have.property('error.msg', error.message)
-                expect(span.meta).to.have.property('error.stack', error.stack)
-              })
-
-            try {
-              await session.run('NOT_EXISTS_OPERATION')
-            } catch (err) {
-              error = err
-            }
-
-            await expectedSpanPromise
-          })
+          await expectedTagsPromise
         })
 
-        describe('transaction', () => {
-          let session
+        it('should propagate context', async () => {
+          const expectedSpanPromise = agent
+            .use(traces => {
+              const span = traces[0][0]
 
-          beforeEach(() => {
-            session = driver.session()
-          })
-
-          afterEach(async () => {
-            await session.close()
-          })
-
-          it('should set the correct tags', async () => {
-            const statement = 'MATCH (m:Movie { name: $name }) RETURN m.name'
-
-            const expectedTagsPromise = agent
-              .use(traces => {
-                const span = traces[0][0]
-
-                expect(span).to.have.property('name', 'neo4j.query')
-                expect(span).to.have.property('service', 'test-neo4j')
-                expect(span).to.have.property('resource', statement)
-                expect(span).to.have.property('type', 'cypher')
-                expect(span.meta).to.have.property('span.kind', 'client')
-                expect(span.meta).to.have.property('db.name', 'neo4j')
-                expect(span.meta).to.have.property('db.type', 'neo4j')
-                expect(span.meta).to.have.property('db.user', 'neo4j')
-                expect(span.meta).to.have.property('out.host', 'localhost')
-                expect(span.metrics).to.have.property('out.port', 11011)
+              expect(span).to.include({
+                name: 'test-context',
+                service: 'test'
               })
 
+              expect(span.parent_id).to.not.be.null
+            })
+
+          const span = tracer.startSpan('test-context')
+
+          await tracer.scope().activate(span, async () => {
+            await session.run('MATCH (n) return n LIMIT 1')
+            await span.finish()
+          })
+          await expectedSpanPromise
+        })
+
+        it('should handle errors', async () => {
+          let error
+
+          const expectedSpanPromise = agent
+            .use(traces => {
+              const span = traces[0][0]
+
+              expect(span.meta).to.have.property(ERROR_TYPE, error.name)
+              expect(span.meta).to.have.property(ERROR_MESSAGE, error.message)
+              expect(span.meta).to.have.property(ERROR_STACK, error.stack)
+            })
+
+          try {
+            await session.run('NOT_EXISTS_OPERATION')
+          } catch (err) {
+            error = err
+          }
+
+          await expectedSpanPromise
+        })
+      })
+
+      describe('transaction', () => {
+        let session
+
+        beforeEach(() => {
+          session = driver.session()
+        })
+
+        afterEach(async () => {
+          await session.close()
+        })
+
+        it('should set the correct tags', async () => {
+          const statement = 'MATCH (m:Movie { name: $name }) RETURN m.name'
+
+          const expectedTagsPromise = agent
+            .use(traces => {
+              const span = traces[0][0]
+
+              expect(span).to.include({
+                name: 'neo4j.query',
+                service: 'test-neo4j',
+                resource: statement,
+                type: 'cypher'
+              })
+              expect(span.meta).to.include({
+                'span.kind': 'client',
+                'db.name': 'neo4j',
+                'db.type': 'neo4j',
+                'db.user': 'neo4j',
+                'out.host': 'localhost'
+              })
+              expect(span.metrics).to.have.property('out.port', 7687)
+            })
+
+          const transaction = session.beginTransaction()
+          await transaction.run(statement, { name: 'Alice in Wonderland' })
+          await transaction.commit()
+
+          await expectedTagsPromise
+        })
+
+        it('should propagate context', async () => {
+          const expectedSpanPromise = agent
+            .use(traces => {
+              const span = traces[0][0]
+
+              expect(span).to.include({
+                name: 'test-context',
+                service: 'test'
+              })
+
+              expect(span.parent_id).to.not.be.null
+            })
+
+          const span = tracer.startSpan('test-context')
+
+          await tracer.scope().activate(span, async () => {
             const transaction = session.beginTransaction()
-            await transaction.run(statement, { name: 'Alice in Wonderland' })
+            await transaction.run('MATCH (n) return n LIMIT 1')
             await transaction.commit()
-
-            await expectedTagsPromise
+            await span.finish()
           })
 
-          it('should propagate context', async () => {
-            const expectedSpanPromise = agent
-              .use(traces => {
-                const span = traces[0][0]
+          await expectedSpanPromise
+        })
 
-                expect(span).to.include({
-                  name: 'test-context',
-                  service: 'test'
-                })
+        it('should handle errors', async () => {
+          let error
 
-                expect(span.parent_id).to.not.be.null
-              })
+          const expectedSpanPromise = agent
+            .use(traces => {
+              const span = traces[0][0]
 
-            const span = tracer.startSpan('test-context')
-
-            await tracer.scope().activate(span, async () => {
-              const transaction = session.beginTransaction()
-              await transaction.run('MATCH (n) return n LIMIT 1')
-              await transaction.commit()
-              await span.finish()
+              expect(span.meta).to.have.property(ERROR_TYPE, error.name)
+              expect(span.meta).to.have.property(ERROR_MESSAGE, error.message)
+              expect(span.meta).to.have.property(ERROR_STACK, error.stack)
             })
 
-            await expectedSpanPromise
-          })
+          try {
+            const transaction = session.beginTransaction()
+            await transaction.run('NOT_EXISTS_OPERATION')
+            await transaction.commit()
+          } catch (err) {
+            error = err
+          }
 
-          it('should handle errors', async () => {
-            let error
-
-            const expectedSpanPromise = agent
-              .use(traces => {
-                const span = traces[0][0]
-
-                expect(span.meta).to.have.property('error.type', error.name)
-                expect(span.meta).to.have.property('error.msg', error.message)
-                expect(span.meta).to.have.property('error.stack', error.stack)
-              })
-
-            try {
-              const transaction = session.beginTransaction()
-              await transaction.run('NOT_EXISTS_OPERATION')
-              await transaction.commit()
-            } catch (err) {
-              error = err
-            }
-
-            await expectedSpanPromise
-          })
+          await expectedSpanPromise
         })
       })
     })
