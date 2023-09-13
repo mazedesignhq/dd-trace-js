@@ -8,7 +8,7 @@ function waitForNeo4j () {
     const operation = new RetryOperation('neo4j')
 
     operation.attempt(currentAttempt => {
-      const driver = neo4j.driver('bolt://localhost:11011', neo4j.auth.basic('neo4j', 'test'))
+      const driver = neo4j.driver('bolt://localhost:7687', neo4j.auth.basic('neo4j', 'test-password'))
 
       driver.verifyConnectivity().then(() => {
         driver.close()

@@ -11,29 +11,53 @@ const startCh = channel('apm:neo4j:query:start')
 const finishCh = channel('apm:neo4j:query:finish')
 const errorCh = channel('apm:neo4j:query:error')
 
-addHook({ name: 'neo4j-driver-core', file: 'lib/session.js', versions: ['>=4.3.0'] }, exports => {
-  const Session = exports.default
-  shimmer.wrap(Session.prototype, 'run', wrapRun)
-  return Session
-})
+addHook(
+  {
+    name: 'neo4j-driver-core',
+    file: 'lib/session.js',
+    versions: ['>=4.3.0']
+  },
+  (exports) => {
+    shimmer.wrap(exports.default.prototype, 'run', wrapRun)
+    return exports
+  }
+)
 
-addHook({ name: 'neo4j-driver-core', file: 'lib/transaction.js', versions: ['>=4.3.0'] }, exports => {
-  const Transaction = exports.default
-  shimmer.wrap(Transaction.prototype, 'run', wrapRun)
-  return Transaction
-})
+addHook(
+  {
+    name: 'neo4j-driver-core',
+    file: 'lib/transaction.js',
+    versions: ['>=4.3.0']
+  },
+  (exports) => {
+    shimmer.wrap(exports.default.prototype, 'run', wrapRun)
+    return exports
+  }
+)
 
-addHook({ name: 'neo4j-driver', file: 'lib/session.js', versions: ['<4.3.0', '>=4.0.0'] }, exports => {
-  const Session = exports.default
-  shimmer.wrap(Session.prototype, 'run', wrapRun)
-  return Session
-})
+addHook(
+  {
+    name: 'neo4j-driver',
+    file: 'lib/session.js',
+    versions: ['>=4.0.0 <4.3.0']
+  },
+  (exports) => {
+    shimmer.wrap(exports.default.prototype, 'run', wrapRun)
+    return exports
+  }
+)
 
-addHook({ name: 'neo4j-driver', file: 'lib/transaction.js', versions: ['<4.3.0', '>=4.0.0'] }, exports => {
-  const Transaction = exports.default
-  shimmer.wrap(Transaction.prototype, 'run', wrapRun)
-  return Transaction
-})
+addHook(
+  {
+    name: 'neo4j-driver',
+    file: 'lib/transaction.js',
+    versions: ['>=4.0.0 <4.3.0']
+  },
+  (exports) => {
+    shimmer.wrap(exports.default.prototype, 'run', wrapRun)
+    return exports
+  }
+)
 
 function wrapRun (run) {
   return function (statement) {
@@ -86,7 +110,6 @@ function getAttributesFromNeo4jSession (session) {
 
   // seedRouter is used when connecting to a url that starts with "neo4j", usually aura
   const address = connectionProvider._address || connectionProvider._seedRouter
-  const auth = connectionProvider._authToken || {}
 
   const attributes = {
     // "neo4j" is the default database name. When used, "session._database" is an empty string
@@ -96,8 +119,20 @@ function getAttributesFromNeo4jSession (session) {
     attributes.host = address._host
     attributes.port = address._port
   }
+
+  // neo4j-driver <5.12.0
+  const auth = connectionProvider._authToken || {}
   if (auth.principal) {
     attributes.dbUser = auth.principal
   }
+
+  // neo4j-driver >=5.12.0
+  const authProvider = connectionProvider._authenticationProvider || {}
+  const authTokenManager = authProvider._authTokenManager || {}
+  const authToken = authTokenManager._authToken || {}
+  if (authToken.principal) {
+    attributes.dbUser = authToken.principal
+  }
+
   return attributes
 }
