@@ -86,6 +86,13 @@ services:
     image: ghcr.io/ridedott/pubsub-emulator
     ports:
       - "127.0.0.1:8081:8081"
+  neo4j:
+    image: neo4j:5.11.0
+    environment:
+      - NEO4J_AUTH=neo4j/test-password
+    ports:
+      - "7474:7474"
+      - "7687:7687"
   localstack:
     image: localstack/localstack:3.0.2
     ports:
