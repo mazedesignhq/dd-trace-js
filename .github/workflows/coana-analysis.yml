@@ -1,0 +1,36 @@
+name: Coana Vulnerability Analysis
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # every day at 3 AM
+  workflow_dispatch: # run manually
+
+jobs:
+  coana-vulnerability-analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Enable corepack for Node
+        run: corepack enable
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: yarn install --frozen-lockfile
+      - run: yarn install --frozen-lockfile
+        working-directory: ./docs
+
+      - name: Run Coana CLI
+        id: coana-cli
+        uses: coana-tech/coana-action/vulnerability-analysis@stable
+        with:
+          apiKey: ${{ secrets.COANA_API_KEY_PUBLIC_REPOS }}
+          repoUrl: https://github.com/${{github.repository}}
+          debug: "true"
+          uploadReportArtifact: "true"
