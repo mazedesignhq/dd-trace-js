@@ -45,6 +45,7 @@ describe('Plugin', () => {
 
         withPeerService(
           () => tracer,
+          'cassandra-driver',
           (done) => client.execute('SELECT now() FROM local;', err => err && done(err)),
           '127.0.0.1', 'db.cassandra.contact.points'
         )
@@ -145,7 +146,7 @@ describe('Plugin', () => {
           const childOf = tracer.startSpan('test')
 
           scope.activate(childOf, () => {
-            client.batch([`UPDATE test.test SET test='test' WHERE id='1234';`], () => {
+            client.batch(['UPDATE test.test SET test=\'test\' WHERE id=\'1234\';'], () => {
               expect(tracer.scope().active()).to.equal(childOf)
               done()
             })

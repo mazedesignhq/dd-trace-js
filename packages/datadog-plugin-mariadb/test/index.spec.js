@@ -57,7 +57,8 @@ describe('Plugin', () => {
 
         withPeerService(
           () => tracer,
-          (done) => connection.query('SELECT 1', (_) => { done() }),
+          'mariadb',
+          done => connection.query('SELECT 1', (err) => { err && done(err) }),
           'db', 'db.name')
 
         it('should propagate context to callbacks, with correct callback args', done => {
@@ -66,6 +67,7 @@ describe('Plugin', () => {
           tracer.scope().activate(span, () => {
             const span = tracer.scope().active()
 
+            // eslint-disable-next-line n/handle-callback-err
             connection.query('SELECT 1 + 1 AS solution', (err, results, fields) => {
               try {
                 expect(results).to.not.be.null

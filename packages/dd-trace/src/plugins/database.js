@@ -1,6 +1,7 @@
 'use strict'
 
 const StoragePlugin = require('./storage')
+const { PEER_SERVICE_KEY, PEER_SERVICE_SOURCE_KEY } = require('../constants')
 
 class DatabasePlugin extends StoragePlugin {
   static get operation () { return 'query' }
@@ -19,6 +20,7 @@ class DatabasePlugin extends StoragePlugin {
       encodedDdpv: ''
     }
   }
+
   encodingServiceTags (serviceTag, encodeATag, spanConfig) {
     if (serviceTag !== spanConfig) {
       this.serviceTags[serviceTag] = spanConfig
@@ -26,32 +28,56 @@ class DatabasePlugin extends StoragePlugin {
     }
   }
 
-  createDBMPropagationCommentService (serviceName) {
+  createDBMPropagationCommentService (serviceName, span) {
     this.encodingServiceTags('dddbs', 'encodedDddbs', serviceName)
     this.encodingServiceTags('dde', 'encodedDde', this.tracer._env)
     this.encodingServiceTags('ddps', 'encodedDdps', this.tracer._service)
     this.encodingServiceTags('ddpv', 'encodedDdpv', this.tracer._version)
+    if (span.context()._tags['out.host']) {
+      this.encodingServiceTags('ddh', 'encodedDdh', span._spanContext._tags['out.host'])
+    }
+    if (span.context()._tags['db.name']) {
+      this.encodingServiceTags('dddb', 'encodedDddb', span._spanContext._tags['db.name'])
+    }
 
-    const { encodedDddbs, encodedDde, encodedDdps, encodedDdpv } = this.serviceTags
+    const { encodedDddb, encodedDddbs, encodedDde, encodedDdh, encodedDdps, encodedDdpv } = this.serviceTags
 
-    return `dddbs='${encodedDddbs}',dde='${encodedDde}',` +
-    `ddps='${encodedDdps}',ddpv='${encodedDdpv}'`
+    let dbmComment = `dddb='${encodedDddb}',dddbs='${encodedDddbs}',dde='${encodedDde}',ddh='${encodedDdh}',` +
+      `ddps='${encodedDdps}',ddpv='${encodedDdpv}'`
+
+    const peerData = this.getPeerService(span.context()._tags)
+    if (peerData !== undefined && peerData[PEER_SERVICE_SOURCE_KEY] === PEER_SERVICE_KEY) {
+      this.encodingServiceTags('ddprs', 'encodedDdprs', peerData[PEER_SERVICE_KEY])
+
+      const { encodedDdprs } = this.serviceTags
+      dbmComment += `,ddprs='${encodedDdprs}'`
+    }
+    return dbmComment
   }
 
-  injectDbmQuery (query, serviceName, isPreparedStatement = false) {
+  getDbmServiceName (span, tracerService) {
+    if (this._tracerConfig.spanComputePeerService) {
+      const peerData = this.getPeerService(span.context()._tags)
+      return this.getPeerServiceRemap(peerData)[PEER_SERVICE_KEY] || tracerService
+    }
+    return tracerService
+  }
+
+  injectDbmQuery (span, query, serviceName, isPreparedStatement = false) {
     const mode = this.config.dbmPropagationMode
+    const dbmService = this.getDbmServiceName(span, serviceName)
 
     if (mode === 'disabled') {
       return query
     }
 
-    const servicePropagation = this.createDBMPropagationCommentService(serviceName)
+    const servicePropagation = this.createDBMPropagationCommentService(dbmService, span)
 
     if (isPreparedStatement || mode === 'service') {
       return `/*${servicePropagation}*/ ${query}`
     } else if (mode === 'full') {
-      this.activeSpan.setTag('_dd.dbm_trace_injected', 'true')
-      const traceparent = this.activeSpan._spanContext.toTraceparent()
+      span.setTag('_dd.dbm_trace_injected', 'true')
+      const traceparent = span._spanContext.toTraceparent()
       return `/*${servicePropagation},traceparent='${traceparent}'*/ ${query}`
     }
   }

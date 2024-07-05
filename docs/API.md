@@ -8,7 +8,7 @@ The module exported by this library is an instance of the [Tracer](./interfaces/
 
 <h2 id="auto-instrumentation">Automatic Instrumentation</h2>
 
-APM provides out-of-the-box instrumentation for many popular frameworks and libraries by using a plugin system. By default all built-in plugins are enabled. Disabling plugins can cause unexpected side effects, so it is highly recommended to leave them enabled.
+APM provides out-of-the-box instrumentation for many popular frameworks and libraries by using a plugin system. By default, all built-in plugins are enabled. Disabling plugins can cause unexpected side effects, so it is highly recommended to leave them enabled.
 
 Built-in plugins can be configured individually:
 
@@ -97,61 +97,63 @@ tracer.use('pg', {
 <h5 id="restify-tags"></h5>
 <h5 id="restify-config"></h5>
 <h5 id="tedious"></h5>
+<h5 id="undici"></h5>
 <h5 id="when"></h5>
 <h5 id="winston"></h5>
 <h3 id="integrations-list">Available Plugins</h3>
 
-* [amqp10](./interfaces/plugins.amqp10.html)
-* [amqplib](./interfaces/plugins.amqplib.html)
-* [aws-sdk](./interfaces/plugins.aws_sdk.html)
-* [bluebird](./interfaces/plugins.bluebird.html)
-* [couchbase](./interfaces/plugins.couchbase.html)
-* [cucumber](./interfaces/plugins.cucumber.html)
-* [bunyan](./interfaces/plugins.bunyan.html)
-* [cassandra-driver](./interfaces/plugins.cassandra_driver.html)
-* [connect](./interfaces/plugins.connect.html)
-* [dns](./interfaces/plugins.dns.html)
-* [elasticsearch](./interfaces/plugins.elasticsearch.html)
-* [express](./interfaces/plugins.express.html)
-* [fastify](./interfaces/plugins.fastify.html)
-* [fetch](./interfaces/plugins.fetch.html)
-* [generic-pool](./interfaces/plugins.generic_pool.html)
-* [google-cloud-pubsub](./interfaces/plugins.google_cloud_pubsub.html)
-* [graphql](./interfaces/plugins.graphql.html)
-* [grpc](./interfaces/plugins.grpc.html)
-* [hapi](./interfaces/plugins.hapi.html)
-* [http](./interfaces/plugins.http.html)
-* [http2](./interfaces/plugins.http2.html)
-* [ioredis](./interfaces/plugins.ioredis.html)
-* [jest](./interfaces/plugins.jest.html)
-* [kafkajs](./interfaces/plugins.kafkajs.html)
-* [knex](./interfaces/plugins.knex.html)
-* [koa](./interfaces/plugins.koa.html)
-* [ldapjs](./interfaces/plugins.ldapjs.html)
-* [mariadb](./interfaces/plugins.mariadb.html)
-* [microgateway--core](./interfaces/plugins.microgateway_core.html)
-* [mocha](./interfaces/plugins.mocha.html)
-* [mongodb-core](./interfaces/plugins.mongodb_core.html)
-* [mysql](./interfaces/plugins.mysql.html)
-* [mysql2](./interfaces/plugins.mysql2.html)
+* [amqp10](./interfaces/export_.plugins.amqp10.html)
+* [amqplib](./interfaces/export_.plugins.amqplib.html)
+* [aws-sdk](./interfaces/export_.plugins.aws_sdk.html)
+* [bluebird](./interfaces/export_.plugins.bluebird.html)
+* [couchbase](./interfaces/export_.plugins.couchbase.html)
+* [cucumber](./interfaces/export_.plugins.cucumber.html)
+* [bunyan](./interfaces/export_.plugins.bunyan.html)
+* [cassandra-driver](./interfaces/export_.plugins.cassandra_driver.html)
+* [connect](./interfaces/export_.plugins.connect.html)
+* [dns](./interfaces/export_.plugins.dns.html)
+* [elasticsearch](./interfaces/export_.plugins.elasticsearch.html)
+* [express](./interfaces/export_.plugins.express.html)
+* [fastify](./interfaces/export_.plugins.fastify.html)
+* [fetch](./interfaces/export_.plugins.fetch.html)
+* [generic-pool](./interfaces/export_.plugins.generic_pool.html)
+* [google-cloud-pubsub](./interfaces/export_.plugins.google_cloud_pubsub.html)
+* [graphql](./interfaces/export_.plugins.graphql.html)
+* [grpc](./interfaces/export_.plugins.grpc.html)
+* [hapi](./interfaces/export_.plugins.hapi.html)
+* [http](./interfaces/export_.plugins.http.html)
+* [http2](./interfaces/export_.plugins.http2.html)
+* [ioredis](./interfaces/export_.plugins.ioredis.html)
+* [jest](./interfaces/export_.plugins.jest.html)
+* [kafkajs](./interfaces/export_.plugins.kafkajs.html)
+* [knex](./interfaces/export_.plugins.knex.html)
+* [koa](./interfaces/export_.plugins.koa.html)
+* [ldapjs](./interfaces/export_.plugins.ldapjs.html)
+* [mariadb](./interfaces/export_.plugins.mariadb.html)
+* [microgateway--core](./interfaces/export_.plugins.microgateway_core.html)
+* [mocha](./interfaces/export_.plugins.mocha.html)
+* [mongodb-core](./interfaces/export_.plugins.mongodb_core.html)
+* [mysql](./interfaces/export_.plugins.mysql.html)
+* [mysql2](./interfaces/export_.plugins.mysql2.html)
 * [neo4j](./interfaces/plugins.neo4j.html)
-* [net](./interfaces/plugins.net.html)
-* [next](./interfaces/plugins.next.html)
-* [opensearch](./interfaces/plugins.opensearch.html)
-* [openai](./interfaces/plugins.openai.html)
-* [oracledb](./interfaces/plugins.oracledb.html)
-* [paperplane](./interfaces/plugins.paperplane.html)
-* [pino](./interfaces/plugins.pino.html)
-* [pg](./interfaces/plugins.pg.html)
-* [promise](./interfaces/plugins.promise.html)
-* [promise-js](./interfaces/plugins.promise_js.html)
-* [q](./interfaces/plugins.q.html)
-* [redis](./interfaces/plugins.redis.html)
-* [restify](./interfaces/plugins.restify.html)
-* [router](./interfaces/plugins.router.html)
-* [tedious](./interfaces/plugins.tedious.html)
-* [when](./interfaces/plugins.when.html)
-* [winston](./interfaces/plugins.winston.html)
+* [net](./interfaces/export_.plugins.net.html)
+* [next](./interfaces/export_.plugins.next.html)
+* [opensearch](./interfaces/export_.plugins.opensearch.html)
+* [openai](./interfaces/export_.plugins.openai.html)
+* [oracledb](./interfaces/export_.plugins.oracledb.html)
+* [paperplane](./interfaces/export_.plugins.paperplane.html)
+* [pino](./interfaces/export_.plugins.pino.html)
+* [pg](./interfaces/export_.plugins.pg.html)
+* [promise](./interfaces/export_.plugins.promise.html)
+* [promise-js](./interfaces/export_.plugins.promise_js.html)
+* [q](./interfaces/export_.plugins.q.html)
+* [redis](./interfaces/export_.plugins.redis.html)
+* [restify](./interfaces/export_.plugins.restify.html)
+* [router](./interfaces/export_.plugins.router.html)
+* [tedious](./interfaces/export_.plugins.tedious.html)
+* [undici](./interfaces/export_.plugins.undici.html)
+* [when](./interfaces/export_.plugins.when.html)
+* [winston](./interfaces/export_.plugins.winston.html)
 
 <h2 id="manual-instrumentation">Manual Instrumentation</h2>
 
@@ -196,7 +198,7 @@ Errors passed to the callback will automatically be added to the span.
 
 <h4 id="promise">Promise</h4>
 
-For promises, the span will be finished afer the promise has been either resolved or rejected.
+For promises, the span will be finished after the promise has been either resolved or rejected.
 
 ```javascript
 function handle () {
@@ -264,7 +266,7 @@ This method returns the active span from the current scope.
 <h4>scope.activate(span, fn)</h4>
 
 This method activates the provided span in a new scope available in the
-provided function. Any asynchronous context created from whithin that function
+provided function. Any asynchronous context created from within that function
 will also have the same scope.
 
 ```javascript
@@ -346,7 +348,7 @@ const opentracing = require('opentracing')
 opentracing.initGlobalTracer(tracer)
 ```
 
-The following tags are available to override Datadog specific options:
+The following tags are available to override Datadog-specific options:
 
 * `service.name`: The service name to be used for this span. The service name from the tracer will be used if this is not provided.
 * `resource.name`: The resource name to be used for this span. The operation name will be used if this is not provided.
@@ -363,7 +365,7 @@ const tracerProvider = new tracer.TracerProvider()
 tracerProvider.register()
 ```
 
-The following attributes are available to override Datadog specific options:
+The following attributes are available to override Datadog-specific options:
 
 * `service.name`: The service name to be used for this span. The service name from the tracer will be used if this is not provided.
 * `resource.name`: The resource name to be used for this span. The operation name will be used if this is not provided.

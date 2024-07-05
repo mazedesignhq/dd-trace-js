@@ -12,6 +12,8 @@ const tags = {
   MANUAL_KEEP: 'manual.keep',
   MANUAL_DROP: 'manual.drop',
   MEASURED: '_dd.measured',
+  BASE_SERVICE: '_dd.base_service',
+  DD_PARENT_ID: '_dd.parent_id',
 
   // HTTP
   HTTP_URL: 'http.url',
@@ -21,7 +23,12 @@ const tags = {
   HTTP_REQUEST_HEADERS: 'http.request.headers',
   HTTP_RESPONSE_HEADERS: 'http.response.headers',
   HTTP_USERAGENT: 'http.useragent',
-  HTTP_CLIENT_IP: 'http.client_ip'
+  HTTP_CLIENT_IP: 'http.client_ip',
+
+  // Messaging
+
+  // DSM Specific
+  PATHWAY_HASH: 'pathway.hash'
 }
 
 // Deprecated

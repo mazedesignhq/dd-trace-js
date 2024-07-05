@@ -1,10 +1,9 @@
 'use strict'
 
-const { channel } = require('../../diagnostics_channel')
+const { channel } = require('dc-polyfill')
 const { isFalse } = require('./util')
 const plugins = require('./plugins')
 const log = require('./log')
-const Nomenclature = require('./service-naming')
 
 const loadChannel = channel('dd-trace:instrumentation:load')
 
@@ -72,11 +71,10 @@ module.exports = class PluginManager {
     const Plugin = pluginClasses[name]
 
     if (!Plugin) return
+    if (!this._tracerConfig) return // TODO: don't wait for tracer to be initialized
     if (!this._pluginsByName[name]) {
       this._pluginsByName[name] = new Plugin(this._tracer, this._tracerConfig)
     }
-    if (!this._tracerConfig) return // TODO: don't wait for tracer to be initialized
-
     const pluginConfig = this._configsByName[name] || {
       enabled: this._tracerConfig.plugins !== false
     }
@@ -103,7 +101,7 @@ module.exports = class PluginManager {
   // like instrumenter.enable()
   configure (config = {}) {
     this._tracerConfig = config
-    Nomenclature.configure(config)
+    this._tracer._nomenclature.configure(config)
 
     for (const name in pluginClasses) {
       this.loadPlugin(name)
@@ -137,7 +135,8 @@ module.exports = class PluginManager {
       headerTags,
       dbmPropagationMode,
       dsmEnabled,
-      clientIpEnabled
+      clientIpEnabled,
+      memcachedCommandEnabled
     } = this._tracerConfig
 
     const sharedConfig = {}
@@ -152,6 +151,7 @@ module.exports = class PluginManager {
 
     sharedConfig.dbmPropagationMode = dbmPropagationMode
     sharedConfig.dsmEnabled = dsmEnabled
+    sharedConfig.memcachedCommandEnabled = memcachedCommandEnabled
 
     if (serviceMapping && serviceMapping[name]) {
       sharedConfig.service = serviceMapping[name]

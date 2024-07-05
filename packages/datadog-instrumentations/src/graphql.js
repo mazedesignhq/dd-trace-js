@@ -37,6 +37,13 @@ const validateStartCh = channel('apm:graphql:validate:start')
 const validateFinishCh = channel('apm:graphql:validate:finish')
 const validateErrorCh = channel('apm:graphql:validate:error')
 
+class AbortError extends Error {
+  constructor (message) {
+    super(message)
+    this.name = 'AbortError'
+  }
+}
+
 function getOperation (document, operationName) {
   if (!document || !Array.isArray(document.definitions)) {
     return
@@ -175,11 +182,11 @@ function wrapExecute (execute) {
           docSource: documentSources.get(document)
         })
 
-        const context = { source, asyncResource, fields: {} }
+        const context = { source, asyncResource, fields: {}, abortController: new AbortController() }
 
         contexts.set(contextValue, context)
 
-        return callInAsyncScope(exe, asyncResource, this, arguments, (err, res) => {
+        return callInAsyncScope(exe, asyncResource, this, arguments, context.abortController, (err, res) => {
           if (finishResolveCh.hasSubscribers) finishResolvers(context)
 
           const error = err || (res && res.errors && res.errors[0])
@@ -207,7 +214,7 @@ function wrapResolve (resolve) {
 
     const field = assertField(context, info, args)
 
-    return callInAsyncScope(resolve, field.asyncResource, this, arguments, (err) => {
+    return callInAsyncScope(resolve, field.asyncResource, this, arguments, context.abortController, (err) => {
       updateFieldCh.publish({ field, info, err })
     })
   }
@@ -217,10 +224,15 @@ function wrapResolve (resolve) {
   return resolveAsync
 }
 
-function callInAsyncScope (fn, aR, thisArg, args, cb) {
+function callInAsyncScope (fn, aR, thisArg, args, abortController, cb) {
   cb = cb || (() => {})
 
   return aR.runInAsyncScope(() => {
+    if (abortController?.signal.aborted) {
+      cb(null, null)
+      throw new AbortError('Aborted')
+    }
+
     try {
       const result = fn.apply(thisArg, args)
       if (result && typeof result.then === 'function') {
@@ -349,6 +361,11 @@ function finishResolvers ({ fields }) {
     })
   })
 }
+
+addHook({ name: '@graphql-tools/executor', file: 'cjs/execution/execute.js', versions: ['>=0.0.14'] }, execute => {
+  shimmer.wrap(execute, 'execute', wrapExecute(execute))
+  return execute
+})
 
 addHook({ name: 'graphql', file: 'execution/execute.js', versions: ['>=0.10'] }, execute => {
   shimmer.wrap(execute, 'execute', wrapExecute(execute))

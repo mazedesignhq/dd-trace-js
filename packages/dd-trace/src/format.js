@@ -4,6 +4,7 @@ const constants = require('./constants')
 const tags = require('../../../ext/tags')
 const id = require('./id')
 const { isError } = require('./util')
+const { registerExtraService } = require('./service-naming/extra-services')
 
 const SAMPLING_PRIORITY_KEY = constants.SAMPLING_PRIORITY_KEY
 const SAMPLING_RULE_DECISION = constants.SAMPLING_RULE_DECISION
@@ -13,7 +14,7 @@ const SPAN_SAMPLING_MECHANISM = constants.SPAN_SAMPLING_MECHANISM
 const SPAN_SAMPLING_RULE_RATE = constants.SPAN_SAMPLING_RULE_RATE
 const SPAN_SAMPLING_MAX_PER_SECOND = constants.SPAN_SAMPLING_MAX_PER_SECOND
 const SAMPLING_MECHANISM_SPAN = constants.SAMPLING_MECHANISM_SPAN
-const MEASURED = tags.MEASURED
+const { MEASURED, BASE_SERVICE, ANALYTICS } = tags
 const ORIGIN_KEY = constants.ORIGIN_KEY
 const HOSTNAME_KEY = constants.HOSTNAME_KEY
 const TOP_LEVEL_KEY = constants.TOP_LEVEL_KEY
@@ -23,6 +24,7 @@ const ERROR_STACK = constants.ERROR_STACK
 const ERROR_TYPE = constants.ERROR_TYPE
 
 const map = {
+  'operation.name': 'name',
   'service.name': 'service',
   'span.type': 'type',
   'resource.name': 'resource'
@@ -31,6 +33,8 @@ const map = {
 function format (span) {
   const formatted = formatSpan(span)
 
+  extractSpanLinks(formatted, span)
+  extractSpanEvents(formatted, span)
   extractRootTags(formatted, span)
   extractChunkTags(formatted, span)
   extractTags(formatted, span)
@@ -51,7 +55,8 @@ function formatSpan (span) {
     meta: {},
     metrics: {},
     start: Math.round(span._startTime * 1e6),
-    duration: Math.round(span._duration * 1e6)
+    duration: Math.round(span._duration * 1e6),
+    links: []
   }
 }
 
@@ -60,6 +65,44 @@ function setSingleSpanIngestionTags (span, options) {
   addTag({}, span.metrics, SPAN_SAMPLING_MECHANISM, SAMPLING_MECHANISM_SPAN)
   addTag({}, span.metrics, SPAN_SAMPLING_RULE_RATE, options.sampleRate)
   addTag({}, span.metrics, SPAN_SAMPLING_MAX_PER_SECOND, options.maxPerSecond)
+}
+
+function extractSpanLinks (trace, span) {
+  const links = []
+  if (span._links) {
+    for (const link of span._links) {
+      const { context, attributes } = link
+      const formattedLink = {}
+
+      formattedLink.trace_id = context.toTraceId(true)
+      formattedLink.span_id = context.toSpanId(true)
+
+      if (attributes && Object.keys(attributes).length > 0) {
+        formattedLink.attributes = attributes
+      }
+      if (context?._sampling?.priority >= 0) formattedLink.flags = context._sampling.priority > 0 ? 1 : 0
+      if (context?._tracestate) formattedLink.tracestate = context._tracestate.toString()
+
+      links.push(formattedLink)
+    }
+  }
+  if (links.length > 0) { trace.meta['_dd.span_links'] = JSON.stringify(links) }
+}
+
+function extractSpanEvents (trace, span) {
+  const events = []
+  if (span._events) {
+    for (const event of span._events) {
+      const formattedEvent = {
+        name: event.name,
+        time_unix_nano: Math.round(event.startTime * 1e6),
+        attributes: event.attributes && Object.keys(event.attributes).length > 0 ? event.attributes : undefined
+      }
+
+      events.push(formattedEvent)
+    }
+  }
+  if (events.length > 0) { trace.meta.events = JSON.stringify(events) }
 }
 
 function extractTags (trace, span) {
@@ -73,6 +116,13 @@ function extractTags (trace, span) {
     addTag({}, trace.metrics, MEASURED, 1)
   }
 
+  const tracerService = span.tracer()._service.toLowerCase()
+  if (tags['service.name']?.toLowerCase() !== tracerService) {
+    span.setTag(BASE_SERVICE, tracerService)
+
+    registerExtraService(tags['service.name'])
+  }
+
   for (const tag in tags) {
     switch (tag) {
       case 'service.name':
@@ -83,6 +133,9 @@ function extractTags (trace, span) {
       // HACK: remove when Datadog supports numeric status code
       case 'http.status_code':
         addTag(trace.meta, {}, tag, tags[tag] && String(tags[tag]))
+        break
+      case 'analytics.event':
+        addTag({}, trace.metrics, ANALYTICS, tags[tag] === undefined || tags[tag] ? 1 : 0)
         break
       case HOSTNAME_KEY:
       case MEASURED:
@@ -98,7 +151,10 @@ function extractTags (trace, span) {
       case ERROR_STACK:
         // HACK: remove when implemented in the backend
         if (context._name !== 'fs.operation') {
-          trace.error = 1
+          // HACK: to ensure otel.recordException does not influence trace.error
+          if (tags.setTraceError) {
+            trace.error = 1
+          }
         } else {
           break
         }
@@ -106,7 +162,6 @@ function extractTags (trace, span) {
         addTag(trace.meta, trace.metrics, tag, tags[tag])
     }
   }
-
   setSingleSpanIngestionTags(trace, context._spanSampling)
 
   addTag(trace.meta, trace.metrics, 'language', 'javascript')

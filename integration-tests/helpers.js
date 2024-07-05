@@ -10,8 +10,7 @@ const childProcess = require('child_process')
 const { fork } = childProcess
 const exec = promisify(childProcess.exec)
 const http = require('http')
-const fs = require('fs')
-const mkdir = promisify(fs.mkdir)
+const fs = require('fs/promises')
 const os = require('os')
 const path = require('path')
 const rimraf = promisify(require('rimraf'))
@@ -75,7 +74,11 @@ class FakeAgent extends EventEmitter {
     })
   }
 
-  assertMessageReceived (fn, timeout, expectedMessageCount = 1) {
+  // **resolveAtFirstSuccess** - specific use case for Next.js (or any other future libraries)
+  // where multiple payloads are generated, and only one is expected to have the proper span (ie next.request),
+  // but it't not guaranteed to be the last one (so, expectedMessageCount would not be helpful).
+  // It can still fail if it takes longer than `timeout` duration or if none pass the assertions (timeout still called)
+  assertMessageReceived (fn, timeout, expectedMessageCount = 1, resolveAtFirstSuccess) {
     timeout = timeout || 5000
     let resultResolve
     let resultReject
@@ -83,7 +86,8 @@ class FakeAgent extends EventEmitter {
     const errors = []
 
     const timeoutObj = setTimeout(() => {
-      resultReject([...errors, new Error('timeout')])
+      const errorsMsg = errors.length === 0 ? '' : `, additionally:\n${errors.map(e => e.stack).join('\n')}\n===\n`
+      resultReject(new Error(`timeout${errorsMsg}`, { cause: { errors } }))
     }, timeout)
 
     const resultPromise = new Promise((resolve, reject) => {
@@ -101,7 +105,7 @@ class FakeAgent extends EventEmitter {
       try {
         msgCount += 1
         fn(msg)
-        if (msgCount === expectedMessageCount) {
+        if (resolveAtFirstSuccess || msgCount === expectedMessageCount) {
           resultResolve()
           this.removeListener('message', messageHandler)
         }
@@ -122,7 +126,8 @@ class FakeAgent extends EventEmitter {
     const errors = []
 
     const timeoutObj = setTimeout(() => {
-      resultReject([...errors, new Error('timeout')])
+      const errorsMsg = errors.length === 0 ? '' : `, additionally:\n${errors.map(e => e.stack).join('\n')}\n===\n`
+      resultReject(new Error(`timeout${errorsMsg}`, { cause: { errors } }))
     }, timeout)
 
     const resultPromise = new Promise((resolve, reject) => {
@@ -178,17 +183,18 @@ function spawnProc (filename, options = {}, stdioHandler) {
         stdioHandler(data)
       }
       // eslint-disable-next-line no-console
-      console.log(data.toString())
+      if (!options.silent) console.log(data.toString())
     })
 
     proc.stderr.on('data', data => {
       // eslint-disable-next-line no-console
-      console.error(data.toString())
+      if (!options.silent) console.error(data.toString())
     })
   })
 }
 
-async function createSandbox (dependencies = [], isGitRepo = false, integrationTestsPaths = ['./integration-tests/*']) {
+async function createSandbox (dependencies = [], isGitRepo = false,
+  integrationTestsPaths = ['./integration-tests/*'], followUpCommand) {
   /* To execute integration tests without a sandbox uncomment the next line
    * and do `yarn link && yarn link dd-trace` */
   // return { folder: path.join(process.cwd(), 'integration-tests'), remove: async () => {} }
@@ -199,18 +205,31 @@ async function createSandbox (dependencies = [], isGitRepo = false, integrationT
   // We might use NODE_OPTIONS to init the tracer. We don't want this to affect this operations
   const { NODE_OPTIONS, ...restOfEnv } = process.env
 
-  await mkdir(folder)
+  await fs.mkdir(folder)
   await exec(`yarn pack --filename ${out}`) // TODO: cache this
   await exec(`yarn add ${allDependencies.join(' ')}`, { cwd: folder, env: restOfEnv })
 
-  integrationTestsPaths.forEach(async (path) => {
-    await exec(`cp -R ${path} ${folder}`)
+  for (const path of integrationTestsPaths) {
+    if (process.platform === 'win32') {
+      await exec(`Copy-Item -Recurse -Path "${path}" -Destination "${folder}"`, { shell: 'powershell.exe' })
+    } else {
+      await exec(`cp -R ${path} ${folder}`)
+    }
+  }
+  if (process.platform === 'win32') {
+    // On Windows, we can only sync entire filesystem volume caches.
+    await exec(`Write-VolumeCache ${folder[0]}`, { shell: 'powershell.exe' })
+  } else {
     await exec(`sync ${folder}`)
-  })
+  }
+
+  if (followUpCommand) {
+    await exec(followUpCommand, { cwd: folder, env: restOfEnv })
+  }
 
   if (isGitRepo) {
     await exec('git init', { cwd: folder })
-    await exec('echo "node_modules/" > .gitignore', { cwd: folder })
+    await fs.writeFile(path.join(folder, '.gitignore'), 'node_modules/', { flush: true })
     await exec('git config user.email "john@doe.com"', { cwd: folder })
     await exec('git config user.name "John Doe"', { cwd: folder })
     await exec('git config commit.gpgsign false', { cwd: folder })
@@ -247,29 +266,34 @@ async function curl (url, useHttp2 = false) {
   })
 }
 
-async function curlAndAssertMessage (agent, procOrUrl, fn, timeout) {
-  const resultPromise = agent.assertMessageReceived(fn, timeout)
+async function curlAndAssertMessage (agent, procOrUrl, fn, timeout, expectedMessageCount, resolveAtFirstSuccess) {
+  const resultPromise = agent.assertMessageReceived(fn, timeout, expectedMessageCount, resolveAtFirstSuccess)
   await curl(procOrUrl)
   return resultPromise
 }
 
 function getCiVisAgentlessConfig (port) {
+  // We remove GITHUB_WORKSPACE so the repository root is not assigned to dd-trace-js
+  const { GITHUB_WORKSPACE, ...rest } = process.env
   return {
-    ...process.env,
+    ...rest,
     DD_API_KEY: '1',
-    DD_APP_KEY: '1',
     DD_CIVISIBILITY_AGENTLESS_ENABLED: 1,
     DD_CIVISIBILITY_AGENTLESS_URL: `http://127.0.0.1:${port}`,
-    NODE_OPTIONS: '-r dd-trace/ci/init'
+    NODE_OPTIONS: '-r dd-trace/ci/init',
+    DD_INSTRUMENTATION_TELEMETRY_ENABLED: 'false'
   }
 }
 
 function getCiVisEvpProxyConfig (port) {
+  // We remove GITHUB_WORKSPACE so the repository root is not assigned to dd-trace-js
+  const { GITHUB_WORKSPACE, ...rest } = process.env
   return {
-    ...process.env,
+    ...rest,
     DD_TRACE_AGENT_PORT: port,
     NODE_OPTIONS: '-r dd-trace/ci/init',
-    DD_CIVISIBILITY_AGENTLESS_ENABLED: '0'
+    DD_CIVISIBILITY_AGENTLESS_ENABLED: '0',
+    DD_INSTRUMENTATION_TELEMETRY_ENABLED: 'false'
   }
 }
 

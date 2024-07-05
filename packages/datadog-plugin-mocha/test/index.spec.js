@@ -96,7 +96,6 @@ describe('Plugin', () => {
         .reply(200, 'OK')
 
       process.env.DD_API_KEY = 'key'
-      process.env.DD_APP_KEY = 'app-key'
 
       const isAgentlessTest = this.currentTest.parent.title === 'reporting through agentless'
       const isEvpProxyTest = this.currentTest.parent.title === 'reporting through evp proxy'
@@ -144,6 +143,7 @@ describe('Plugin', () => {
         mocha.addFile(testFilePath)
         mocha.run()
       })
+
       it('works with failing tests', (done) => {
         const testFilePath = path.join(__dirname, 'mocha-test-fail.js')
         const testSuite = testFilePath.replace(`${process.cwd()}/`, '')
@@ -180,6 +180,7 @@ describe('Plugin', () => {
         mocha.addFile(testFilePath)
         mocha.run()
       })
+
       it('works with skipping tests', (done) => {
         const testFilePath = path.join(__dirname, 'mocha-test-skip.js')
         const testNames = [
@@ -325,12 +326,12 @@ describe('Plugin', () => {
           })
           expect(testSpan.meta[COMPONENT]).to.equal('mocha')
           expect(testSpan.meta[ERROR_TYPE]).to.equal('TypeError')
-          const beginning = `mocha-fail-hook-sync "before each" hook for "will not run but be reported as failed": `
+          const beginning = 'mocha-fail-hook-sync "before each" hook for "will not run but be reported as failed": '
           expect(testSpan.meta[ERROR_MESSAGE].startsWith(beginning)).to.equal(true)
           const errorMsg = testSpan.meta[ERROR_MESSAGE].replace(beginning, '')
           expect(
-            errorMsg === `Cannot set property 'error' of undefined` ||
-            errorMsg === `Cannot set properties of undefined (setting 'error')`
+            errorMsg === 'Cannot set property \'error\' of undefined' ||
+            errorMsg === 'Cannot set properties of undefined (setting \'error\')'
           ).to.equal(true)
           expect(testSpan.meta[ERROR_STACK]).not.to.be.undefined
         }).then(done, done)

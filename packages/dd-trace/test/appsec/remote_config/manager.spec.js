@@ -11,6 +11,7 @@ describe('RemoteConfigManager', () => {
   let Scheduler
   let request
   let log
+  let extraServices
   let RemoteConfigManager
   let config
   let rc
@@ -31,12 +32,17 @@ describe('RemoteConfigManager', () => {
       error: sinon.spy()
     }
 
+    extraServices = []
+
     RemoteConfigManager = proxyquire('../src/appsec/remote_config/manager', {
       'crypto-randomuuid': uuid,
       './scheduler': Scheduler,
       '../../../../../package.json': { version: '3.0.0' },
       '../../exporters/common/request': request,
-      '../../log': log
+      '../../log': log,
+      '../../service-naming/extra-services': {
+        getExtraServices: () => extraServices
+      }
     })
 
     config = {
@@ -70,11 +76,7 @@ describe('RemoteConfigManager', () => {
 
     expect(rc.scheduler).to.equal(scheduler)
 
-    expect(rc.requestOptions).to.deep.equal({
-      method: 'POST',
-      url: config.url,
-      path: '/v0.7/config'
-    })
+    expect(rc.url).to.deep.equal(config.url)
 
     expect(rc.state).to.deep.equal({
       client: {
@@ -95,7 +97,8 @@ describe('RemoteConfigManager', () => {
           tracer_version: '3.0.0',
           service: config.service,
           env: config.env,
-          app_version: config.version
+          app_version: config.version,
+          extra_services: []
         },
         capabilities: 'AA=='
       },
@@ -185,7 +188,11 @@ describe('RemoteConfigManager', () => {
       const payload = JSON.stringify(rc.state)
 
       rc.poll(() => {
-        expect(request).to.have.been.calledOnceWith(payload, rc.requestOptions)
+        expect(request).to.have.been.calledOnceWith(payload, {
+          url: rc.url,
+          method: 'POST',
+          path: '/v0.7/config'
+        })
         expect(log.error).to.not.have.been.called
         expect(rc.parseConfig).to.not.have.been.called
         cb()
@@ -199,7 +206,11 @@ describe('RemoteConfigManager', () => {
       const payload = JSON.stringify(rc.state)
 
       rc.poll(() => {
-        expect(request).to.have.been.calledOnceWith(payload, rc.requestOptions)
+        expect(request).to.have.been.calledOnceWith(payload, {
+          url: rc.url,
+          method: 'POST',
+          path: '/v0.7/config'
+        })
         expect(log.error).to.have.been.calledOnceWithExactly(err)
         expect(rc.parseConfig).to.not.have.been.called
         cb()
@@ -212,7 +223,11 @@ describe('RemoteConfigManager', () => {
       const payload = JSON.stringify(rc.state)
 
       rc.poll(() => {
-        expect(request).to.have.been.calledOnceWith(payload, rc.requestOptions)
+        expect(request).to.have.been.calledOnceWith(payload, {
+          url: rc.url,
+          method: 'POST',
+          path: '/v0.7/config'
+        })
         expect(log.error).to.not.have.been.called
         expect(rc.parseConfig).to.have.been.calledOnceWithExactly({ a: 'b' })
         cb()
@@ -228,7 +243,11 @@ describe('RemoteConfigManager', () => {
       const payload = JSON.stringify(rc.state)
 
       rc.poll(() => {
-        expect(request).to.have.been.calledOnceWith(payload, rc.requestOptions)
+        expect(request).to.have.been.calledOnceWith(payload, {
+          url: rc.url,
+          method: 'POST',
+          path: '/v0.7/config'
+        })
         expect(rc.parseConfig).to.have.been.calledOnceWithExactly({ a: 'b' })
         expect(log.error).to.have.been
           .calledOnceWithExactly('Could not parse remote config response: Error: Unable to parse config')
@@ -239,7 +258,11 @@ describe('RemoteConfigManager', () => {
 
         rc.poll(() => {
           expect(request).to.have.been.calledTwice
-          expect(request.secondCall).to.have.been.calledWith(payload2, rc.requestOptions)
+          expect(request.secondCall).to.have.been.calledWith(payload2, {
+            url: rc.url,
+            method: 'POST',
+            path: '/v0.7/config'
+          })
           expect(rc.parseConfig).to.have.been.calledOnce
           expect(log.error).to.have.been.calledOnce
           expect(rc.state.client.state.has_error).to.be.false
@@ -255,9 +278,32 @@ describe('RemoteConfigManager', () => {
       const payload = JSON.stringify(rc.state)
 
       rc.poll(() => {
-        expect(request).to.have.been.calledOnceWith(payload, rc.requestOptions)
+        expect(request).to.have.been.calledOnceWith(payload, {
+          url: rc.url,
+          method: 'POST',
+          path: '/v0.7/config'
+        })
         expect(log.error).to.not.have.been.called
         expect(rc.parseConfig).to.not.have.been.called
+        cb()
+      })
+    })
+
+    it('should include extra_services in the payload', (cb) => {
+      request.yieldsRight(null, '{}', 200)
+
+      extraServices = ['test-service']
+
+      // getPayload includes the new extraServices that might be available
+      const payload = rc.getPayload()
+      expect(JSON.parse(payload).client.client_tracer.extra_services).to.deep.equal(extraServices)
+
+      rc.poll(() => {
+        expect(request).to.have.been.calledOnceWith(payload, {
+          url: rc.url,
+          method: 'POST',
+          path: '/v0.7/config'
+        })
         cb()
       })
     })

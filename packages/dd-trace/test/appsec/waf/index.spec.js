@@ -20,13 +20,12 @@ describe('WAF Manager', () => {
     DDWAF.prototype.dispose = sinon.stub()
     DDWAF.prototype.createContext = sinon.stub()
     DDWAF.prototype.update = sinon.stub()
-    DDWAF.prototype.rulesInfo = {
-      loaded: true, failed: 0, version: '0.0.1'
+    DDWAF.prototype.diagnostics = {
+      ruleset_version: '1.0.0',
+      rules: {
+        loaded: ['rule_1'], failed: []
+      }
     }
-    DDWAF.prototype.requiredAddresses = new Map([
-      ['server.request.headers.no_cookies', { 'header': 'value' }],
-      ['server.request.uri.raw', 'https://testurl']
-    ])
 
     WAFManager = proxyquire('../../../src/appsec/waf/waf_manager', {
       '@datadog/native-appsec': { DDWAF }
@@ -40,6 +39,7 @@ describe('WAF Manager', () => {
     sinon.stub(Reporter, 'reportMetrics')
     sinon.stub(Reporter, 'reportAttack')
     sinon.stub(Reporter, 'reportWafUpdate')
+    sinon.stub(Reporter, 'reportSchemas')
 
     webContext = {}
     sinon.stub(web, 'getContext').returns(webContext)
@@ -64,7 +64,7 @@ describe('WAF Manager', () => {
       waf.init(rules, config.appsec)
 
       expect(Reporter.metricsQueue.set).to.been.calledWithExactly('_dd.appsec.waf.version', '1.2.3')
-      expect(Reporter.metricsQueue.set).to.been.calledWithExactly('_dd.appsec.event_rules.loaded', true)
+      expect(Reporter.metricsQueue.set).to.been.calledWithExactly('_dd.appsec.event_rules.loaded', 1)
       expect(Reporter.metricsQueue.set).to.been.calledWithExactly('_dd.appsec.event_rules.error_count', 0)
       expect(Reporter.metricsQueue.set).not.to.been.calledWith('_dd.appsec.event_rules.errors')
       expect(Reporter.metricsQueue.set).to.been.calledWithExactly('manual.keep', 'true')
@@ -72,17 +72,24 @@ describe('WAF Manager', () => {
 
     it('should set init metrics with errors', () => {
       DDWAF.prototype.constructor.version.returns('2.3.4')
-      DDWAF.prototype.rulesInfo = {
-        loaded: false, failed: 2, errors: ['error1', 'error2']
+      DDWAF.prototype.diagnostics = {
+        rules: {
+          loaded: ['rule_1'],
+          failed: ['rule_2', 'rule_3'],
+          errors: {
+            error_1: ['invalid_1'],
+            error_2: ['invalid_2', 'invalid_3']
+          }
+        }
       }
 
       waf.init(rules, config.appsec)
 
       expect(Reporter.metricsQueue.set).to.been.calledWithExactly('_dd.appsec.waf.version', '2.3.4')
-      expect(Reporter.metricsQueue.set).to.been.calledWithExactly('_dd.appsec.event_rules.loaded', false)
+      expect(Reporter.metricsQueue.set).to.been.calledWithExactly('_dd.appsec.event_rules.loaded', 1)
       expect(Reporter.metricsQueue.set).to.been.calledWithExactly('_dd.appsec.event_rules.error_count', 2)
       expect(Reporter.metricsQueue.set).to.been.calledWithExactly('_dd.appsec.event_rules.errors',
-        '["error1","error2"]')
+        '{"error_1":["invalid_1"],"error_2":["invalid_2","invalid_3"]}')
       expect(Reporter.metricsQueue.set).to.been.calledWithExactly('manual.keep', 'true')
     })
   })
@@ -117,7 +124,7 @@ describe('WAF Manager', () => {
 
     it('should call ddwaf.update', () => {
       const rules = {
-        'rules_data': [
+        rules_data: [
           {
             id: 'blocked_users',
             type: 'data_with_expiration',
@@ -138,7 +145,7 @@ describe('WAF Manager', () => {
 
     it('should call Reporter.reportWafUpdate', () => {
       const rules = {
-        'rules_data': [
+        rules_data: [
           {
             id: 'blocked_users',
             type: 'data_with_expiration',
@@ -154,7 +161,8 @@ describe('WAF Manager', () => {
 
       waf.update(rules)
 
-      expect(Reporter.reportWafUpdate).to.be.calledOnceWithExactly(wafVersion, DDWAF.prototype.rulesInfo.version)
+      expect(Reporter.reportWafUpdate).to.be.calledOnceWithExactly(wafVersion,
+        DDWAF.prototype.diagnostics.ruleset_version)
     })
   })
 
@@ -166,7 +174,7 @@ describe('WAF Manager', () => {
         url: '/path',
         headers: {
           'user-agent': 'Arachni',
-          'host': 'localhost',
+          host: 'localhost',
           cookie: 'a=1;b=2'
         },
         method: 'POST',
@@ -202,69 +210,57 @@ describe('WAF Manager', () => {
         expect(ddwafContext.run).not.to.be.called
       })
 
-      it('should not call ddwafContext.run with invalid params', () => {
-        waf.run({
-          'invalid_address': 'value'
-        }, req)
-        expect(ddwafContext.run).not.to.be.called
-      })
-
       it('should call ddwafContext.run with params', () => {
         ddwafContext.run.returns({ totalRuntime: 1, durationExt: 1 })
 
         wafContextWrapper.run({
-          'server.request.headers.no_cookies': { 'header': 'value' },
-          'server.request.uri.raw': 'https://testurl'
+          persistent: {
+            'server.request.headers.no_cookies': { header: 'value' },
+            'server.request.uri.raw': 'https://testurl',
+            'processor.address': { 'extract-schema': true }
+          }
         })
 
         expect(ddwafContext.run).to.be.calledOnceWithExactly({
-          'server.request.headers.no_cookies': { 'header': 'value' },
-          'server.request.uri.raw': 'https://testurl'
+          persistent: {
+            'server.request.headers.no_cookies': { header: 'value' },
+            'server.request.uri.raw': 'https://testurl',
+            'processor.address': { 'extract-schema': true }
+          }
         }, config.appsec.wafTimeout)
       })
 
-      it('should call ddwafContext.run with filtered params', () => {
-        ddwafContext.run.returns({ totalRuntime: 1, durationExt: 1 })
-
-        wafContextWrapper.run({
-          'server.request.headers.no_cookies': { 'header2': 'value2' },
-          'invalidaddress': 'invalid-value',
-          'server.request.uri.raw': 'https://othertesturl'
-        })
-
-        expect(ddwafContext.run).to.be.calledOnceWithExactly({
-          'server.request.headers.no_cookies': { 'header2': 'value2' },
-          'server.request.uri.raw': 'https://othertesturl'
-        }, config.appsec.wafTimeout)
-      })
-
-      it('should report attack when ddwafContext returns data', () => {
+      it('should report attack when ddwafContext returns events', () => {
         const result = {
           totalRuntime: 1,
           durationExt: 1,
-          data: 'ATTACK DATA'
+          events: ['ATTACK DATA']
         }
 
         ddwafContext.run.returns(result)
         const params = {
-          'server.request.headers.no_cookies': { 'header': 'value' }
+          persistent: {
+            'server.request.headers.no_cookies': { header: 'value' }
+          }
         }
 
         wafContextWrapper.run(params)
 
-        expect(Reporter.reportAttack).to.be.calledOnceWithExactly(result.data)
+        expect(Reporter.reportAttack).to.be.calledOnceWithExactly('["ATTACK DATA"]')
       })
 
       it('should report if rule is triggered', () => {
         const result = {
           totalRuntime: 1,
           durationExt: 1,
-          data: '[ruleTriggered]'
+          events: ['ruleTriggered']
         }
 
         ddwafContext.run.returns(result)
         const params = {
-          'server.request.headers.no_cookies': { 'header': 'value' }
+          persistent: {
+            'server.request.headers.no_cookies': { header: 'value' }
+          }
         }
 
         wafContextWrapper.run(params)
@@ -275,10 +271,12 @@ describe('WAF Manager', () => {
         expect(reportMetricsArg.ruleTriggered).to.be.true
       })
 
-      it('should not report attack when ddwafContext does not return data', () => {
+      it('should not report attack when ddwafContext does not return events', () => {
         ddwafContext.run.returns({ totalRuntime: 1, durationExt: 1 })
         const params = {
-          'server.request.headers.no_cookies': { 'header': 'value' }
+          persistent: {
+            'server.request.headers.no_cookies': { header: 'value' }
+          }
         }
 
         wafContextWrapper.run(params)
@@ -287,9 +285,11 @@ describe('WAF Manager', () => {
       })
 
       it('should not report attack when ddwafContext returns empty data', () => {
-        ddwafContext.run.returns({ totalRuntime: 1, durationExt: 1, data: '[]' })
+        ddwafContext.run.returns({ totalRuntime: 1, durationExt: 1, events: [] })
         const params = {
-          'server.request.headers.no_cookies': { 'header': 'value' }
+          persistent: {
+            'server.request.headers.no_cookies': { header: 'value' }
+          }
         }
 
         wafContextWrapper.run(params)
@@ -299,15 +299,38 @@ describe('WAF Manager', () => {
 
       it('should return the actions', () => {
         const actions = ['block']
-        ddwafContext.run.returns({ totalRuntime: 1, durationExt: 1, data: '[]', actions: actions })
+        ddwafContext.run.returns({ totalRuntime: 1, durationExt: 1, events: [], actions })
 
         const params = {
-          'server.request.headers.no_cookies': { 'header': 'value' }
+          persistent: {
+            'server.request.headers.no_cookies': { header: 'value' }
+          }
         }
 
         const result = wafContextWrapper.run(params)
 
         expect(result).to.be.equals(actions)
+      })
+
+      it('should report schemas when ddwafContext returns schemas in the derivatives', () => {
+        const result = {
+          totalRuntime: 1,
+          durationExt: 1,
+          derivatives: [{ '_dd.appsec.s.req.body': [8] }]
+        }
+        const params = {
+          persistent: {
+            'server.request.body': 'value',
+            'waf.context.processor': {
+              'extract-schema': true
+            }
+          }
+        }
+
+        ddwafContext.run.returns(result)
+
+        wafContextWrapper.run(params)
+        expect(Reporter.reportSchemas).to.be.calledOnceWithExactly(result.derivatives)
       })
     })
   })

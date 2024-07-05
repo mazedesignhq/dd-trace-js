@@ -1,7 +1,5 @@
 'use strict'
 
-// TODO: either instrument all or none of the render functions
-
 const { channel, addHook } = require('./helpers/instrument')
 const shimmer = require('../../datadog-shimmer')
 const { DD_MAJOR } = require('../../../version')
@@ -10,9 +8,13 @@ const startChannel = channel('apm:next:request:start')
 const finishChannel = channel('apm:next:request:finish')
 const errorChannel = channel('apm:next:request:error')
 const pageLoadChannel = channel('apm:next:page:load')
+const bodyParsedChannel = channel('apm:next:body-parsed')
+const queryParsedChannel = channel('apm:next:query-parsed')
 
 const requests = new WeakSet()
-const requestToNextjsPagePath = new WeakMap()
+const nodeNextRequestsToNextRequests = new WeakMap()
+
+const MIDDLEWARE_HEADER = 'x-middleware-invoke'
 
 function wrapHandleRequest (handleRequest) {
   return function (req, res, pathname, query) {
@@ -29,9 +31,9 @@ function wrapHandleApiRequest (handleApiRequest) {
         if (!handled) return handled
 
         return this.hasPage(pathname).then(pageFound => {
-          const page = pageFound ? pathname : getPageFromPath(pathname, this.dynamicRoutes)
+          const pageData = pageFound ? { page: pathname } : getPageFromPath(pathname, this.dynamicRoutes)
 
-          pageLoadChannel.publish({ page })
+          pageLoadChannel.publish(pageData)
 
           return handled
         })
@@ -55,18 +57,6 @@ function wrapHandleApiRequestWithMatch (handleApiRequest) {
   }
 }
 
-function wrapRenderToResponse (renderToResponse) {
-  return function (ctx) {
-    return instrument(ctx.req, ctx.res, () => renderToResponse.apply(this, arguments))
-  }
-}
-
-function wrapRenderErrorToResponse (renderErrorToResponse) {
-  return function (ctx) {
-    return instrument(ctx.req, ctx.res, () => renderErrorToResponse.apply(this, arguments))
-  }
-}
-
 function wrapRenderToHTML (renderToHTML) {
   return function (req, res, pathname, query, parsedUrl) {
     return instrument(req, res, () => renderToHTML.apply(this, arguments))
@@ -75,7 +65,19 @@ function wrapRenderToHTML (renderToHTML) {
 
 function wrapRenderErrorToHTML (renderErrorToHTML) {
   return function (err, req, res, pathname, query) {
-    return instrument(req, res, () => renderErrorToHTML.apply(this, arguments))
+    return instrument(req, res, err, () => renderErrorToHTML.apply(this, arguments))
+  }
+}
+
+function wrapRenderToResponse (renderToResponse) {
+  return function (ctx) {
+    return instrument(ctx.req, ctx.res, () => renderToResponse.apply(this, arguments))
+  }
+}
+
+function wrapRenderErrorToResponse (renderErrorToResponse) {
+  return function (ctx, err) {
+    return instrument(ctx.req, ctx.res, err, () => renderErrorToResponse.apply(this, arguments))
   }
 }
 
@@ -84,15 +86,19 @@ function wrapFindPageComponents (findPageComponents) {
     const result = findPageComponents.apply(this, arguments)
 
     if (result) {
-      pageLoadChannel.publish({ page: getPagePath(pathname) })
+      pageLoadChannel.publish(getPagePath(pathname))
     }
 
     return result
   }
 }
 
-function getPagePath (page) {
-  return typeof page === 'object' ? page.pathname : page
+function getPagePath (maybePage) {
+  if (typeof maybePage !== 'object') return { page: maybePage }
+
+  const isAppPath = maybePage.isAppPath
+  const page = maybePage.pathname || maybePage.page
+  return { page, isAppPath }
 }
 
 function getPageFromPath (page, dynamicRoutes = []) {
@@ -105,11 +111,23 @@ function getPageFromPath (page, dynamicRoutes = []) {
   return getPagePath(page)
 }
 
-function instrument (req, res, handler) {
+function instrument (req, res, error, handler) {
+  if (typeof error === 'function') {
+    handler = error
+    error = null
+  }
+
   req = req.originalRequest || req
   res = res.originalResponse || res
 
-  if (requests.has(req)) return handler()
+  // TODO support middleware properly in the future?
+  const isMiddleware = req.headers[MIDDLEWARE_HEADER]
+  if (isMiddleware || requests.has(req)) {
+    if (error) {
+      errorChannel.publish({ error })
+    }
+    return handler()
+  }
 
   requests.add(req)
 
@@ -133,54 +151,15 @@ function instrument (req, res, handler) {
   })
 }
 
-function wrapSetupServerWorker (setupServerWorker) {
-  return function (requestHandler) {
-    arguments[0] = shimmer.wrap(requestHandler, wrapRequestHandler(requestHandler))
-    return setupServerWorker.apply(this, arguments)
-  }
-}
+function wrapServeStatic (serveStatic) {
+  return function (req, res, path) {
+    return instrument(req, res, () => {
+      if (pageLoadChannel.hasSubscribers && path) {
+        pageLoadChannel.publish({ page: path, isStatic: true })
+      }
 
-function wrapInitialize (initialize) {
-  return async function () {
-    const result = await initialize.apply(this, arguments)
-    if (Array.isArray(result)) {
-      const requestHandler = result[0]
-      result[0] = shimmer.wrap(requestHandler, wrapRequestHandler(requestHandler))
-    }
-    return result
-  }
-}
-
-function wrapRequestHandler (requestHandler) {
-  return function (req, res) {
-    return instrument(req, res, async () => {
-      const result = await requestHandler.apply(this, arguments) // apply here first to get page path association
-
-      const page = requestToNextjsPagePath.get(req)
-      if (page && pageLoadChannel.hasSubscribers) pageLoadChannel.publish({ page })
-
-      return result
+      return serveStatic.apply(this, arguments)
     })
-  }
-}
-
-// these two functions make sure we get path groups for routes in standalone,
-// as it doesn't route through `next-server`/`base-server`
-function wrapGetResolveRoutes (getResolveRoutes) {
-  return function () {
-    const result = getResolveRoutes.apply(this, arguments)
-    return shimmer.wrap(result, wrapResolveRoutes(result))
-  }
-}
-
-function wrapResolveRoutes (resolveRoutes) {
-  return async function (req) {
-    const result = await resolveRoutes.apply(this, arguments)
-    if (result && result.matchedOutput) {
-      const path = result.matchedOutput.itemPath
-      requestToNextjsPagePath.set(req, path)
-    }
-    return result
   }
 }
 
@@ -188,6 +167,11 @@ function finish (ctx, result, err) {
   if (err) {
     ctx.error = err
     errorChannel.publish(ctx)
+  }
+
+  const maybeNextRequest = nodeNextRequestsToNextRequests.get(ctx.req)
+  if (maybeNextRequest) {
+    ctx.nextRequest = maybeNextRequest
   }
 
   finishChannel.publish(ctx)
@@ -199,59 +183,62 @@ function finish (ctx, result, err) {
   return result
 }
 
+// also wrapped in dist/server/future/route-handlers/app-route-route-handler.js
+// in versions below 13.3.0 that support middleware,
+// however, it is not provided as a class function or exported property
 addHook({
   name: 'next',
-  versions: ['>=13.4.13'],
-  file: 'dist/server/lib/router-utils/resolve-routes.js'
-}, resolveRoutesModule => shimmer.wrap(resolveRoutesModule, 'getResolveRoutes', wrapGetResolveRoutes))
+  versions: ['>=13.3.0'],
+  file: 'dist/server/web/spec-extension/adapters/next-request.js'
+}, NextRequestAdapter => {
+  shimmer.wrap(NextRequestAdapter.NextRequestAdapter, 'fromNodeNextRequest', fromNodeNextRequest => {
+    return function (nodeNextRequest) {
+      const nextRequest = fromNodeNextRequest.apply(this, arguments)
+      nodeNextRequestsToNextRequests.set(nodeNextRequest.originalRequest, nextRequest)
+      return nextRequest
+    }
+  })
+  return NextRequestAdapter
+})
 
 addHook({
   name: 'next',
-  versions: ['13.4.13'],
-  file: 'dist/server/lib/setup-server-worker.js'
-}, setupServerWorker => shimmer.wrap(setupServerWorker, 'initializeServerWorker', wrapSetupServerWorker))
+  versions: ['>=11.1'],
+  file: 'dist/server/serve-static.js'
+}, serveStatic => shimmer.wrap(serveStatic, 'serveStatic', wrapServeStatic))
 
 addHook({
   name: 'next',
-  versions: ['>=13.4.15'],
-  file: 'dist/server/lib/router-server.js'
-}, routerServer => shimmer.wrap(routerServer, 'initialize', wrapInitialize))
+  versions: DD_MAJOR >= 4 ? ['>=10.2 <11.1'] : ['>=9.5 <11.1'],
+  file: 'dist/next-server/server/serve-static.js'
+}, serveStatic => shimmer.wrap(serveStatic, 'serveStatic', wrapServeStatic))
 
-addHook({ name: 'next', versions: ['>=13.2'], file: 'dist/server/next-server.js' }, nextServer => {
+addHook({ name: 'next', versions: ['>=11.1'], file: 'dist/server/next-server.js' }, nextServer => {
   const Server = nextServer.default
 
+  shimmer.wrap(Server.prototype, 'handleRequest', wrapHandleRequest)
+
+  // Wrapping these makes sure any public API render methods called in a custom server
+  // are traced properly
+  // (instead of wrapping the top-level API methods, just wrapping these covers them all)
   shimmer.wrap(Server.prototype, 'renderToResponse', wrapRenderToResponse)
   shimmer.wrap(Server.prototype, 'renderErrorToResponse', wrapRenderErrorToResponse)
+
   shimmer.wrap(Server.prototype, 'findPageComponents', wrapFindPageComponents)
 
   return nextServer
 })
 
-// these functions wrapped in all versions above 13.2 except:
-// 13.4.13 due to tests failing when these functions are wrapped
-// 13.4.14 due to it not being in the NPM registry/officially released
-addHook({
-  name: 'next',
-  versions: ['>=13.2 <13.4.13', '>=13.4.15'],
-  file: 'dist/server/next-server.js'
-}, nextServer => {
+// `handleApiRequest` changes parameters/implementation at 13.2.0
+addHook({ name: 'next', versions: ['>=13.2'], file: 'dist/server/next-server.js' }, nextServer => {
   const Server = nextServer.default
-
-  shimmer.wrap(Server.prototype, 'handleRequest', wrapHandleRequest)
   shimmer.wrap(Server.prototype, 'handleApiRequest', wrapHandleApiRequestWithMatch)
-
   return nextServer
 })
 
 addHook({ name: 'next', versions: ['>=11.1 <13.2'], file: 'dist/server/next-server.js' }, nextServer => {
   const Server = nextServer.default
-
-  shimmer.wrap(Server.prototype, 'handleRequest', wrapHandleRequest)
   shimmer.wrap(Server.prototype, 'handleApiRequest', wrapHandleApiRequest)
-  shimmer.wrap(Server.prototype, 'renderToResponse', wrapRenderToResponse)
-  shimmer.wrap(Server.prototype, 'renderErrorToResponse', wrapRenderErrorToResponse)
-  shimmer.wrap(Server.prototype, 'findPageComponents', wrapFindPageComponents)
-
   return nextServer
 })
 
@@ -264,9 +251,65 @@ addHook({
 
   shimmer.wrap(Server.prototype, 'handleRequest', wrapHandleRequest)
   shimmer.wrap(Server.prototype, 'handleApiRequest', wrapHandleApiRequest)
+
+  // Likewise with newer versions, these correlate to public API render methods for custom servers
+  // all public ones use these methods somewhere in their code path
   shimmer.wrap(Server.prototype, 'renderToHTML', wrapRenderToHTML)
   shimmer.wrap(Server.prototype, 'renderErrorToHTML', wrapRenderErrorToHTML)
+
   shimmer.wrap(Server.prototype, 'findPageComponents', wrapFindPageComponents)
 
   return nextServer
+})
+
+addHook({
+  name: 'next',
+  versions: ['>=13'],
+  file: 'dist/server/web/spec-extension/request.js'
+}, request => {
+  const nextUrlDescriptor = Object.getOwnPropertyDescriptor(request.NextRequest.prototype, 'nextUrl')
+  shimmer.wrap(nextUrlDescriptor, 'get', function (originalGet) {
+    return function wrappedGet () {
+      const nextUrl = originalGet.apply(this, arguments)
+      if (queryParsedChannel.hasSubscribers) {
+        const query = {}
+        for (const key of nextUrl.searchParams.keys()) {
+          if (!query[key]) {
+            query[key] = nextUrl.searchParams.getAll(key)
+          }
+        }
+
+        queryParsedChannel.publish({ query })
+      }
+      return nextUrl
+    }
+  })
+
+  Object.defineProperty(request.NextRequest.prototype, 'nextUrl', nextUrlDescriptor)
+
+  shimmer.massWrap(request.NextRequest.prototype, ['text', 'json'], function (originalMethod) {
+    return async function wrappedJson () {
+      const body = await originalMethod.apply(this, arguments)
+
+      bodyParsedChannel.publish({ body })
+
+      return body
+    }
+  })
+
+  shimmer.wrap(request.NextRequest.prototype, 'formData', function (originalFormData) {
+    return async function wrappedFormData () {
+      const body = await originalFormData.apply(this, arguments)
+
+      let normalizedBody = body
+      if (typeof body.entries === 'function') {
+        normalizedBody = Object.fromEntries(body.entries())
+      }
+      bodyParsedChannel.publish({ body: normalizedBody })
+
+      return body
+    }
+  })
+
+  return request
 })
