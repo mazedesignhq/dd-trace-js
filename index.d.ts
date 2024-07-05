@@ -181,6 +181,7 @@ interface Plugins {
   "mongoose": tracer.plugins.mongoose;
   "mysql": tracer.plugins.mysql;
   "mysql2": tracer.plugins.mysql2;
+  "neo4j": tracer.plugins.neo4j;
   "net": tracer.plugins.net;
   "next": tracer.plugins.next;
   "openai": tracer.plugins.openai;
@@ -1624,6 +1625,12 @@ declare namespace tracer {
      * [mysql2](https://github.com/sidorares/node-mysql2) module.
      */
     interface mysql2 extends mysql {}
+
+    /**
+     * This plugin automatically instruments the
+     * [neo4j](https://github.com/neo4j/neo4j-javascript-driver) module.
+     */
+    interface neo4j extends Instrumentation {}
 
     /**
      * This plugin automatically instruments the
